@@ -1,0 +1,4 @@
+# Theo dõi tệp ảnh .jpg bằng Git LFS
+*.jpg filter=lfs diff=lfs merge=lfs -text
+# Theo dõi tệp văn bản .txt bằng Git LFS
+*.txt filter=lfs diff=lfs merge=lfs -text
