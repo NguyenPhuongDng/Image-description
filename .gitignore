@@ -1,0 +1,5 @@
+data_encoder/
+checkpoint/
+_backup
+ModelTrain.ipynb
+*.pyc
