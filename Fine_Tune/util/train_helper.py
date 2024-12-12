@@ -8,10 +8,9 @@ import matplotlib.pyplot as plt
 import datetime
 from typing import Type, Callable
 import time
-from .multi_part_model_serialize import save_model_chunks
+from .model_serilizer import save_model_chunks, load_model_chunks, save_state_dicts, load_state_dicts
 
-def save_model(model: nn.Module, folder_path: str, time_stamp: str, name: str, logs: dict | list, metadata: dict[str, object], max_chunk_size : int):
-    folder_path = os.path.join(folder_path, time_stamp)
+def save_model(model: nn.Module, folder_path: str, name: str, logs: dict | list, metadata: dict[str, object], max_chunk_size : int):
     file_path = os.path.join(folder_path, f"{name}.pt")
     if not os.path.exists(folder_path): os.makedirs(folder_path)
     torch.save(model, file_path)
@@ -41,7 +40,12 @@ def train_eval(
         warmup_nepochs : int = 0, 
         warmup_lr : float = 0.1,
         warmup_gamma : float = 1,
+        load_checkpoint: bool = False,
+        load_optimizer: bool = False,
+        checkpoint_path: str = None,
         save: bool = False,
+        save_optimizer: bool = False,
+        save_each: int = -1,
         save_path: str = "train_log",
         mixed_train: bool = False,
         mixed_eval: bool = False,
@@ -56,6 +60,10 @@ def train_eval(
     train_loader = trainloader
     test_loader = testloader
     optimizer = optimizer_type(model.parameters(),lr=warmup_lr)
+    if load_checkpoint:
+        model = load_model_chunks(checkpoint_path, "model")
+        if load_optimizer:
+            optimizer.load_state_dict(load_state_dicts(checkpoint_path, "optimizer")['data'])
     scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma)
     warmup_scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, warmup_gamma)
     model.to(device)
@@ -65,6 +73,14 @@ def train_eval(
     test_metrics = []
     lrs = []
     total_train_time = 0
+    def save_checkpoint(sub_folder: str = None):
+        if sub_folder:
+            real_folder = os.path.join(save_path, time_stamp, sub_folder)
+        else:
+            real_folder = os.path.join(save_path, time_stamp)
+        save_model(model, real_folder, f"model", get_train_log(), get_hyper_parameter(), max_model_size)
+        if save_optimizer:
+            save_state_dicts(optimizer.state_dict(), real_folder, f"optimizer", float('inf'))
     def get_train_log():
         training_logs = [{
             "Epoch" : i + 1,
@@ -112,7 +128,9 @@ def train_eval(
         if ((epoch + 1) % log_step == 0):
             print(f"Train loss : {train_losses[-1]:.4f} | Test loss : {test_losses[-1]:.4f} | Train time : {epoch_train_time:.2f} s | Lr : {lrs[-1]:.8f}")
             if log_metric: print(epoch_metrics)
+        if (save_each != -1 and (epoch +1) % save_each  == 0 and (epoch + 1) != num_epochs):
+            save_checkpoint(f"E{epoch+1}")
     if save:
-        save_model(model, save_path, time_stamp, f"model", get_train_log(), get_hyper_parameter(), max_model_size)
+        save_checkpoint()
     print("Complete")
     return os.path.join(save_path, time_stamp, f"model.pt"), get_train_log()
