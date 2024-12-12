@@ -8,12 +8,13 @@ import matplotlib.pyplot as plt
 import datetime
 from typing import Type, Callable
 import time
+import json
 from .model_serilizer import save_model_chunks, load_model_chunks, save_state_dicts, load_state_dicts
 
 def save_model(model: nn.Module, folder_path: str, name: str, logs: dict | list, metadata: dict[str, object], max_chunk_size : int):
     file_path = os.path.join(folder_path, f"{name}.pt")
     if not os.path.exists(folder_path): os.makedirs(folder_path)
-    torch.save(model, file_path)
+    # torch.save(model, file_path)
     save_model_chunks(model, folder_path, name, max_chunk_size)
     file_path = os.path.join(folder_path, "logs.json")
     import json
@@ -33,7 +34,7 @@ def train_eval(
         train_func: Callable[[nn.Module, DataLoader, Callable[[any], torch.Tensor], torch.optim.Optimizer, bool, str], float],
         test_func: Callable[[nn.Module, DataLoader, Callable[[any], torch.Tensor], bool, str], dict[str, object]],
         lossf : callable,
-        num_epochs : int,
+        end_epoch : int,
         lr : float, 
         gamma : float = 1, 
         log_step : int = 5, 
@@ -43,8 +44,8 @@ def train_eval(
         load_checkpoint: bool = False,
         load_optimizer: bool = False,
         checkpoint_path: str = None,
-        save: bool = False,
-        save_optimizer: bool = False,
+        save_weight: bool = False,
+        save_full: bool = False,
         save_each: int = -1,
         save_path: str = "train_log",
         mixed_train: bool = False,
@@ -59,32 +60,53 @@ def train_eval(
     start_time = time.time()
     train_loader = trainloader
     test_loader = testloader
-    if load_checkpoint:
-        print("Load checkpoint")
-        model = load_model_chunks(checkpoint_path, "model")
-        optimizer = optimizer_type(model.parameters(),lr=warmup_lr)
-        if load_optimizer:
-            print("Load optimizer")
-            optimizer.load_state_dict(load_state_dicts(checkpoint_path, "optimizer")['data'])
-    else:
-        optimizer = optimizer_type(model.parameters(),lr=warmup_lr)
-    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma)
-    warmup_scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, warmup_gamma)
-    model.to(device)
-    print("Start train")
+    start_epoch = 0
     train_losses = []
     test_losses = []
     test_metrics = []
     lrs = []
     total_train_time = 0
+    if load_checkpoint:
+        print("Load checkpoint")
+        model = load_model_chunks(checkpoint_path, "model")
+        optimizer = optimizer_type(model.parameters(),lr=warmup_lr)
+        if load_optimizer:
+            print("Load optimizer, schedulers")
+            data = load_state_dicts(checkpoint_path, "optimizer")
+            optimizer.load_state_dict(data['optimizer'])
+            warmup_scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, warmup_gamma)
+            warmup_scheduler.load_state_dict(data['warmup_scheduler'])
+            scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma)
+            scheduler.load_state_dict(data['scheduler'])
+            previous_logs = []
+            with open(os.path.join(checkpoint_path, "logs.json"), 'r') as file:
+                previous_logs = json.loads(file.read())
+            for previous_log in previous_logs:
+                start_epoch = max(start_epoch, previous_log['Epoch'])
+                train_losses.append(previous_log['Train loss'])
+                test_losses.append(previous_log['Test loss'])
+                lrs.append(previous_log['Learning rate'])
+                test_metrics.append(previous_log['Metrics'])
+    else:
+        optimizer = optimizer_type(model.parameters(),lr=warmup_lr)
+        scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma)
+        warmup_scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, warmup_gamma)
+    model.to(device)
+    print("Start train")
+
     def save_checkpoint(sub_folder: str = None):
         if sub_folder:
             real_folder = os.path.join(save_path, time_stamp, sub_folder)
         else:
             real_folder = os.path.join(save_path, time_stamp)
         save_model(model, real_folder, f"model", get_train_log(), get_hyper_parameter(), max_model_size)
-        if save_optimizer:
-            save_state_dicts(optimizer.state_dict(), real_folder, f"optimizer", float('inf'))
+        if save_full:
+            data = {
+                "optimizer" : optimizer.state_dict(),
+                "warmup_scheduler" : warmup_scheduler.state_dict(),
+                "scheduler" : scheduler.state_dict()
+            }
+            save_state_dicts(data, real_folder, f"optimizer", max_model_size)
     def get_train_log():
         training_logs = [{
             "Epoch" : i + 1,
@@ -96,7 +118,9 @@ def train_eval(
         return training_logs
     def get_hyper_parameter():
         hyper_parameters = {
-            'nepochs' : num_epochs,
+            'start_epochs' : start_epoch+1,
+            'current_epochs' : epoch + 1,
+            'end_epochs' : end_epoch,
             'lr' : lr,
             'gamma' : gamma,
             'optimizer' : optimizer_type.__name__,
@@ -112,7 +136,8 @@ def train_eval(
         }
         hyper_parameters.update(metadata_extra)
         return hyper_parameters
-    for epoch in tqdm.trange(num_epochs):
+    epoch = 0
+    for epoch in tqdm.trange(start_epoch, end_epoch):
         if epoch >= warmup_nepochs: lrs.append(scheduler.get_last_lr()[0])
         else: lrs.append(warmup_scheduler.get_last_lr()[0])
         if (epoch == warmup_nepochs):
@@ -132,9 +157,9 @@ def train_eval(
         if ((epoch + 1) % log_step == 0):
             print(f"Train loss : {train_losses[-1]:.4f} | Test loss : {test_losses[-1]:.4f} | Train time : {epoch_train_time:.2f} s | Lr : {lrs[-1]:.8f}")
             if log_metric: print(epoch_metrics)
-        if (save_each != -1 and (epoch +1) % save_each  == 0 and (epoch + 1) != num_epochs):
+        if (save_each != -1 and (epoch +1) % save_each  == 0 and (epoch + 1) != end_epoch):
             save_checkpoint(f"E{epoch+1}")
-    if save:
+    if save_weight and epoch+1 == end_epoch:
         save_checkpoint()
     print("Complete")
     return os.path.join(save_path, time_stamp, f"model.pt"), get_train_log()
