@@ -1,0 +1,18 @@
+{
+    "nepochs": 10,
+    "lr": 0.0025,
+    "gamma": 0.95,
+    "optimizer": "Adam",
+    "warmup_nepochs": 10,
+    "warmup_lr": 0.001,
+    "warmup_gamma": 1.1,
+    "mixed_train": true,
+    "mixed_eval": false,
+    "lossf": "CrossEntropyLoss",
+    "total_train_eval_time": 2581.757229566574,
+    "total_train_time": 2111.2604892253876,
+    "total_eval_and_control_time": 470.4967403411865,
+    "batch_size": 64,
+    "dataset_name": "Flickr8k",
+    "use_hidden": true
+}

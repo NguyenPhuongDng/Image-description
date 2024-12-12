@@ -59,11 +59,15 @@ def train_eval(
     start_time = time.time()
     train_loader = trainloader
     test_loader = testloader
-    optimizer = optimizer_type(model.parameters(),lr=warmup_lr)
     if load_checkpoint:
+        print("Load checkpoint")
         model = load_model_chunks(checkpoint_path, "model")
+        optimizer = optimizer_type(model.parameters(),lr=warmup_lr)
         if load_optimizer:
+            print("Load optimizer")
             optimizer.load_state_dict(load_state_dicts(checkpoint_path, "optimizer")['data'])
+    else:
+        optimizer = optimizer_type(model.parameters(),lr=warmup_lr)
     scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma)
     warmup_scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, warmup_gamma)
     model.to(device)
