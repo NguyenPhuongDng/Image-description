@@ -10,15 +10,17 @@ class CNN(nn.Module):
         self.neural_net = nn.Sequential (
             ConvLayer(3, 32), nn.ReLU(),
             ConvLayer(32, 64), nn.ReLU(),
-            nn.MaxPool2d(2, 2),
+            nn.MaxPool2d(2, 2), # Output: (batch_size, 64, x/2, x/2)
             ConvLayer(64, 128), nn.ReLU(),
             ConvLayer(128, 256), nn.ReLU(),
-            nn.MaxPool2d(2, 2),
+            nn.MaxPool2d(2, 2), # Output: (batch_size, 256, x/4, x/4)
             ConvLayer(256, 512), nn.ReLU(),
             ConvLayer(512, 1024), nn.ReLU(),
-            nn.MaxPool2d(2, 2),
-            nn.Flatten(),
-            nn.Linear(1024*4*4, 1024), nn.ReLU(),
+            nn.MaxPool2d(2, 2), # Output: (batch_size, 1024, x/8, x/28
+            ConvLayer(1024, 2048), nn.ReLU(),
+            nn.MaxPool2d(2, 2), # Output: (batch_size, 2048, x/16, x/16)
+            nn.Flatten(), # Output: (batch_size, 2048 * 2 * 2) được huấn luyện trên cifar10
+            nn.Linear(2048 * 2 * 2, 1024), nn.ReLU(),
             nn.Linear(1024, 512), nn.ReLU(),
             nn.Linear(512, 10),
     )
