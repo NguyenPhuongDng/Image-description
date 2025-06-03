@@ -1,0 +1,1 @@
+{"vocab_size": 2549, "max_length": 15, "min_freq": 5, "train_size": 6000, "val_size": 1000, "test_size": 1000}
